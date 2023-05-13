@@ -501,6 +501,10 @@ class WithExtMemSize(n: BigInt) extends Config((site, here, up) => {
   case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(size = n)))
 })
 
+class WithMemInterleave extends Config((site, here, up) => {
+  case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(interleave = true)))
+})
+
 class WithExtMemSbusBypass(base: BigInt = x"10_0000_0000") extends Config((site, here, up) => {
   case ExtMem => up(ExtMem, site).map(x => x.copy(incohBase = Some(base)))
 })

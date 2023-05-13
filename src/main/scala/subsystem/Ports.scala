@@ -17,7 +17,9 @@ case class MasterPortParams(
   beatBytes: Int,
   idBits: Int,
   maxXferBytes: Int = 256,
-  executable: Boolean = true)
+  executable: Boolean = true,
+  interleave: Boolean = false, // interleave transactions across memory channels, currently we set default to false
+)
 
 /** Specifies the width of external slave ports */
 case class SlavePortParams(beatBytes: Int, idBits: Int, sourceBits: Int)
@@ -39,9 +41,14 @@ trait CanHaveMasterAXI4MemPort { this: BaseSubsystem =>
 
   val memAXI4Node = AXI4SlaveNode(memPortParamsOpt.map({ case MemoryPortParams(memPortParams, nMemoryChannels, _) =>
     Seq.tabulate(nMemoryChannels) { channel =>
-      val base = AddressSet.misaligned(memPortParams.base, memPortParams.size)
-      val filter = AddressSet(channel * mbus.blockBytes, ~((nMemoryChannels-1) * mbus.blockBytes))
-
+      val base = AddressSet.misaligned(memPortParams.base, memPortParams.size) // all ext. memory size, eg. 32GB
+      var filter = AddressSet(channel * mbus.blockBytes, ~((nMemoryChannels-1) * mbus.blockBytes))
+      if (!memPortParams.interleave) {
+        assert(memPortParams.size % nMemoryChannels == 0, "Memory channel size must be evenly divisible by the number of channels")
+        val per_channel_size = memPortParams.size / nMemoryChannels
+        // filter = AddressSet(channel * per_channel_size,  per_channel_size - 1)
+        filter = AddressSet(channel * per_channel_size,   ~((nMemoryChannels-1) * per_channel_size))
+      }
       AXI4SlavePortParameters(
         slaves = Seq(AXI4SlaveParameters(
           address       = base.flatMap(_.intersect(filter)),
