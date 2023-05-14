@@ -501,6 +501,14 @@ class WithExtMemSize(n: BigInt) extends Config((site, here, up) => {
   case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(size = n)))
 })
 
+class WithRemoteMemSize(n: BigInt) extends Config((site, here, up) => {
+  case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(remoteSize = n)))
+})
+
+class WithRemoteMemChannels(n: Int) extends Config((site, here, up) => {
+  case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(nRemoteChannels = n)))
+})
+
 class WithMemInterleave extends Config((site, here, up) => {
   case ExtMem => up(ExtMem, site).map(x => x.copy(master = x.master.copy(interleave = true)))
 })

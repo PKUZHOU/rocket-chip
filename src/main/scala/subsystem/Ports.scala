@@ -9,6 +9,8 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.util._
+import os.perms
+import os.read
 
 /** Specifies the size and width of external memory ports */
 case class MasterPortParams(
@@ -19,6 +21,8 @@ case class MasterPortParams(
   maxXferBytes: Int = 256,
   executable: Boolean = true,
   interleave: Boolean = false, // interleave transactions across memory channels, currently we set default to false
+  remoteSize: BigInt = 0, // remote memory size. The remaining parts are local memory
+  nRemoteChannels: Int = 0
 )
 
 /** Specifies the width of external slave ports */
@@ -42,16 +46,28 @@ trait CanHaveMasterAXI4MemPort { this: BaseSubsystem =>
   val memAXI4Node = AXI4SlaveNode(memPortParamsOpt.map({ case MemoryPortParams(memPortParams, nMemoryChannels, _) =>
     Seq.tabulate(nMemoryChannels) { channel =>
       val base = AddressSet.misaligned(memPortParams.base, memPortParams.size) // all ext. memory size, eg. 32GB
-      var filter = AddressSet(channel * mbus.blockBytes, ~((nMemoryChannels-1) * mbus.blockBytes))
+      var filter = Seq(AddressSet(channel * mbus.blockBytes, ~((nMemoryChannels-1) * mbus.blockBytes)))
+      val nLocalChannels = nMemoryChannels - memPortParams.nRemoteChannels
+      assert(nLocalChannels > 0, "Number of local channels must be greater than 0")
       if (!memPortParams.interleave) {
-        assert(memPortParams.size % nMemoryChannels == 0, "Memory channel size must be evenly divisible by the number of channels")
-        val per_channel_size = memPortParams.size / nMemoryChannels
-        // filter = AddressSet(channel * per_channel_size,  per_channel_size - 1)
-        filter = AddressSet(channel * per_channel_size,   ~((nMemoryChannels-1) * per_channel_size))
+        if(channel < nLocalChannels){
+          val localMemSize = memPortParams.size - memPortParams.remoteSize
+          assert(localMemSize >= 0, "Local memory size must be greater than or equal to 0")
+          val perChannelSize = localMemSize / nLocalChannels
+          assert(localMemSize % nLocalChannels == 0, "Local memory size must be divisible by number of local channels")
+          filter = AddressSet.misaligned(memPortParams.base + channel * perChannelSize, perChannelSize)
+        }
+        else{
+          val perChannelSize = memPortParams.remoteSize / memPortParams.nRemoteChannels
+          assert(memPortParams.remoteSize % memPortParams.nRemoteChannels == 0, "Remote memory size must be divisible by number of remote channels")
+          val localMemSize = memPortParams.size - memPortParams.remoteSize
+          filter = AddressSet.misaligned(memPortParams.base + localMemSize + (channel - nLocalChannels) * perChannelSize, perChannelSize)
+        }
       }
       AXI4SlavePortParameters(
         slaves = Seq(AXI4SlaveParameters(
-          address       = base.flatMap(_.intersect(filter)),
+          // address       = base.flatMap(_.intersect(filter)),
+          address = base.flatMap(x => filter.flatMap(y => x.intersect(y))),
           resources     = device.reg,
           regionType    = RegionType.UNCACHED, // cacheable
           executable    = true,
